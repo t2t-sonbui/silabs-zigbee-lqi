@@ -56,6 +56,8 @@ typedef struct {
   "zdo leave\0"
 #define COMMAND_STRING_ZDO_BIND \
   "zdo bind\0"
+#define COMMAND_STRING_ZDO_MGMT_LQI \
+  "zdo mgmt-lqi\0"
 #define COMMAND_STRING_BROAD_PJOIN \
   "network broad-pjoin\0"
 #define COMMAND_STRING_NETWORK_LEAVE \
@@ -93,6 +95,7 @@ void emAfPluginGatewayRelayMqttCommandRelayRemove(const uint8_t *);
 void emAfPluginGatewayRelayMqttCommandRelayClear(const uint8_t *);
 void emAfPluginGatewayRelayMqttZdoLeave(const uint8_t *);
 void emAfPluginGatewayRelayMqttZdoBind(const uint8_t *);
+void emAfPluginGatewayRelayMqttZdoMgmtLqi(const uint8_t *);
 void emAfPluginGatewayRelayMqttNetworkBoardPjoin(const uint8_t *);
 void emAfPluginGatewayRelayMqttNetworkLeave(const uint8_t *);
 void emAfPluginGatewayRelayMqttNetworkForm(const uint8_t *);

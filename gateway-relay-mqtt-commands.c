@@ -85,6 +85,8 @@ static const EmAfPluginGatewayRelayMqttCommand commandArray[] = {
     .functionPtr = &emAfPluginGatewayRelayMqttZdoLeave },
   { .commandString = COMMAND_STRING_ZDO_BIND,
     .functionPtr = &emAfPluginGatewayRelayMqttZdoBind },
+  { .commandString = COMMAND_STRING_ZDO_MGMT_LQI,
+    .functionPtr = &emAfPluginGatewayRelayMqttZdoMgmtLqi },
   { .commandString = COMMAND_STRING_BROAD_PJOIN,
     .functionPtr = &emAfPluginGatewayRelayMqttNetworkBoardPjoin },
   { .commandString = COMMAND_STRING_NETWORK_LEAVE,
@@ -328,6 +330,20 @@ void emAfPluginGatewayRelayMqttZdoBind(const uint8_t * argString)
                             destinationEndpoint,
                             EMBER_AF_DEFAULT_APS_OPTIONS);
   UNUSED_VAR(status);
+}
+
+void emAfPluginGatewayRelayMqttZdoMgmtLqi(const uint8_t * argString)
+{
+  EmberNodeId target ;
+  uint8_t index;
+  const uint8_t * stringPtr = argString;
+  EmberStatus status ;
+  sscanf(stringPtr, "%hx %hhx", &target, &index);
+  status = emberLqiTableRequest(target,
+                                index,
+                                EMBER_APS_OPTION_RETRY);
+  emberAfAppPrintln("LQI Table request: 0x%X", status);                
+ 
 }
 
 void emAfPluginGatewayRelayMqttNetworkBoardPjoin(const uint8_t * argString)

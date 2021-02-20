@@ -39,6 +39,7 @@ static const EmberEUI64 NULL_EUI = { 0, 0, 0, 0, 0, 0, 0, 0 };
 // Constants
 #define HOSTVER_STRING_LENGTH 14 // 13 characters + NULL (99.99.99-9999)
 #define EUI64_STRING_LENGTH 19 // "0x" + 16 characters + NULL
+#define EXT_PAN_ID_STRING_LENGTH 19 // "0x" + 16 characters + NULL
 #define NODEID_STRING_LENGTH 7 // "0x" + 4 characters + NULL
 #define CLUSTERID_STRING_LENGTH 7 // "0x" + 4 chars + NULL
 #define GATEWAY_TOPIC_PREFIX_LENGTH 22 // 21 chars `gw/xxxxxxxxxxxxxxxx/` + NULL
@@ -188,7 +189,12 @@ static void publishMqttBindResponse(EmberNodeId nodeId,
 static void publishMqttBindTableReponse(EmberNodeId nodeId,
                                         EmberApsFrame* apsFrame,
                                         uint8_t* message,
+                                        uint16_t length);\
+static void publishMqttLqiTableResponse(EmberNodeId nodeId,
+                                        EmberApsFrame* apsFrame,
+                                        uint8_t* message,
                                         uint16_t length);
+
 
 // MQTT topic and handler list
 typedef void (*MqttTopicHandler)(cJSON* messageJson);
@@ -902,6 +908,187 @@ static void publishMqttBindTableReponse(EmberNodeId nodeId,
   }
 
   cJSON_AddItemToObject(objectJson, "bindTable", entryArrayJson);
+  publishMqttTopic(ZDO_RESPONSE_TOPIC, objectJson);
+}
+
+static void publishMqttLqiTableResponse(EmberNodeId nodeId,
+                                    EmberApsFrame* apsFrame,
+                                    uint8_t* message,
+                                    uint16_t length)
+{
+  cJSON* objectJson;
+  cJSON* entryArrayJson;
+  cJSON* tableEntryJson;
+  cJSON* deviceEndpointJson;
+  uint8_t* messagePointer;
+  uint8_t numEntries, entryCounter;
+  char* dataString;
+  char euiString[EUI64_STRING_LENGTH] = { 0 };
+  EmberEUI64 eui64;
+
+  objectJson = cJSON_CreateObject();
+  entryArrayJson = cJSON_CreateArray();
+
+  cJSON_AddStringToObject(objectJson, "zdoType", "lqiTableResponse");
+
+  emberAfDeviceTableGetEui64FromNodeId(nodeId, eui64);
+  eui64ToString(eui64, euiString);
+  cJSON_AddStringToObject(objectJson, "eui64", euiString);
+
+  char nodeIdString[NODEID_STRING_LENGTH] = {0};
+  nodeIdToString(nodeId, nodeIdString);
+  cJSON_AddStringToObject(objectJson, "nodeId", nodeIdString);
+
+  dataString = createOneByteHexString(
+    message[1]);
+  cJSON_AddStringToObject(objectJson, "status", dataString);
+  free(dataString);
+
+  dataString = createOneByteHexString(
+    message[2]);
+  cJSON_AddStringToObject(objectJson, "neighborTableEntries", dataString);
+  free(dataString);
+
+  // dataString = createOneByteHexString(
+  //   message[3]);
+  // cJSON_AddStringToObject(objectJson, "startIndex", dataString);
+  // free(dataString);
+
+  cJSON_AddIntegerToObject(objectJson, "startIndex", message[3]);
+
+  // dataString = createOneByteHexString(
+  //   message[4]);
+  // cJSON_AddStringToObject(objectJson, "entryCount", dataString);
+  // free(dataString);
+
+  numEntries = message[4]; // entry count
+  cJSON_AddIntegerToObject(objectJson, "entryCount", numEntries);
+
+  messagePointer = message + 5;
+  if (numEntries > 0)
+  {
+    for (entryCounter = 0; entryCounter < numEntries; entryCounter++)
+    {
+      // tableEntryJson = cJSON_CreateObject();
+
+      cJSON *deviceEndpointObj;
+      char extPanIdString[EXT_PAN_ID_STRING_LENGTH] = {0};
+      char euiString[EUI64_STRING_LENGTH] = {0};
+
+      deviceEndpointObj = cJSON_CreateObject();
+
+      sprintf(extPanIdString, "0x%02X%02X%02X%02X%02X%02X%02X%02X",
+              messagePointer[7],
+              messagePointer[6],
+              messagePointer[5],
+              messagePointer[4],
+              messagePointer[3],
+              messagePointer[2],
+              messagePointer[1],
+              messagePointer[0]);
+      cJSON_AddStringToObject(deviceEndpointObj, "extendedPanId", extPanIdString);
+
+      eui64ToString(&(messagePointer[8]), euiString);
+      cJSON_AddStringToObject(deviceEndpointObj, "eui64", euiString);
+
+      char nodeIdString[NODEID_STRING_LENGTH] = {0};
+      nodeIdToString(HIGH_LOW_TO_INT(messagePointer[16 + 1],
+                                     messagePointer[16]),
+                     nodeIdString);
+      cJSON_AddStringToObject(deviceEndpointObj, "nodeId", nodeIdString);
+
+      uint8_t commonValue = messagePointer[18];
+      uint8_t deviceType = commonValue & 0x03;
+
+      switch (deviceType)
+      {
+      case 0:
+        cJSON_AddStringToObject(deviceEndpointObj, "deviceType", "COORDINATOR");
+        break;
+      case 1:
+        cJSON_AddStringToObject(deviceEndpointObj, "deviceType", "ROUTER");
+        break;
+      case 2:
+        cJSON_AddStringToObject(deviceEndpointObj, "deviceType", "END_DEVICE");
+        break;
+      default:
+        cJSON_AddStringToObject(deviceEndpointObj, "deviceType", "UNKNOWN");
+        break;
+      }
+
+      uint8_t rxOnWhenIdle = (commonValue & 0x0c) >> 2;
+      switch (rxOnWhenIdle)
+      {
+      case 0:
+        cJSON_AddStringToObject(deviceEndpointObj, "rxOnWhenIdle", "RX_OFF");
+        break;
+      case 1:
+        cJSON_AddStringToObject(deviceEndpointObj, "rxOnWhenIdle", "RX_ON");
+        break;
+      default:
+        cJSON_AddStringToObject(deviceEndpointObj, "rxOnWhenIdle", "UNKNOWN");
+        break;
+      }
+
+      uint8_t relationship = (commonValue & 0x70) >> 4;
+      switch (relationship)
+      {
+      case 0:
+        cJSON_AddStringToObject(deviceEndpointObj, "relationship", "PARENT");
+        break;
+      case 1:
+        cJSON_AddStringToObject(deviceEndpointObj, "relationship", "CHILD");
+        break;
+      case 2:
+        cJSON_AddStringToObject(deviceEndpointObj, "relationship", "SIBLING");
+        break;
+      case 3:
+        cJSON_AddStringToObject(deviceEndpointObj, "relationship", "UNKNOWN");
+        break;
+      case 4:
+        cJSON_AddStringToObject(deviceEndpointObj, "relationship", "PREVIOUS_CHILD");
+        break;
+      default:
+        cJSON_AddStringToObject(deviceEndpointObj, "relationship", "UNKNOWN");
+        break;
+      }
+
+      uint8_t permitJoining = messagePointer[19] & 0x03;
+      switch (permitJoining)
+      {
+      case 0:
+        cJSON_AddStringToObject(deviceEndpointObj, "permitJoining", "DISABLED");
+        break;
+      case 1:
+        cJSON_AddStringToObject(deviceEndpointObj, "permitJoining", "ENABLED");
+        break;
+      default:
+        cJSON_AddStringToObject(deviceEndpointObj, "permitJoining", "UNKNOWN");
+        break;
+      }
+
+      uint8_t depthValue = messagePointer[20];
+      cJSON_AddIntegerToObject(deviceEndpointObj, "depth", depthValue);
+
+      uint8_t lqiValue = messagePointer[21];
+      cJSON_AddIntegerToObject(deviceEndpointObj, "lqi", lqiValue);
+
+      deviceEndpointJson = deviceEndpointObj;
+
+      // cJSON_AddItemToObject(tableEntryJson,
+      //                       "entry",
+      //                       deviceEndpointJson);
+
+      // cJSON_AddItemToArray(entryArrayJson, tableEntryJson);
+      cJSON_AddItemToArray(entryArrayJson, deviceEndpointJson);
+      messagePointer += 22;
+    }
+    cJSON_AddItemToObject(objectJson, "neighbors", entryArrayJson);
+  }
+  else
+  {
+    cJSON_AddNullToObject(objectJson, "neighbors");
+  }
   publishMqttTopic(ZDO_RESPONSE_TOPIC, objectJson);
 }
 
@@ -1676,6 +1863,11 @@ bool emberAfPluginGatewayRelayMqttPreZDOMessageReceivedCallback(
     case NETWORK_ADDRESS_RESPONSE:
       break;
     case IEEE_ADDRESS_RESPONSE:
+      break;
+    case LQI_TABLE_RESPONSE:
+      emberAfPrintln(EMBER_AF_PRINT_CORE, "LQI buffer received callback length: %d, node: 0x%04x with data:", length, emberNodeId);
+      emberAfPrintBuffer (EMBER_AF_PRINT_CORE, message, length, true);
+      publishMqttLqiTableResponse(emberNodeId, apsFrame, message, length);
       break;
     default:
       break;
